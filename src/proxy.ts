@@ -1,8 +1,9 @@
-import { type NextRequest } from 'next/server'
-import { updateSession } from '@/lib/supabase/middleware'
+import { type NextRequest, NextResponse } from 'next/server'
 
-export async function proxy(request: NextRequest) {
-  return await updateSession(request)
+// AUTH BYPASSED — demo mode active
+// Restore auth by importing updateSession from @/lib/supabase/middleware
+export function proxy(_request: NextRequest) {
+  return NextResponse.next()
 }
 
 export const config = {

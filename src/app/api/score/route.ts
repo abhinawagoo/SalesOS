@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
-import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { Message, Persona, SessionScore } from '@/lib/types'
 import { z } from 'zod'
 
@@ -56,12 +56,7 @@ CRITICAL: Return ONLY valid JSON with this exact structure. No preamble, no mark
 
 export async function POST(req: NextRequest) {
   try {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+    const supabase = createAdminClient()
 
     const { sessionId, messages, persona } = await req.json() as {
       sessionId: string

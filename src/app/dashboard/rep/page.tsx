@@ -1,32 +1,22 @@
-import { redirect } from 'next/navigation'
-import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
+import { DEMO_USER } from '@/lib/demo'
 import Link from 'next/link'
 import { Session } from '@/lib/types'
 import { getOverallScore, getWeakestSkill, formatDate, scoreColor } from '@/lib/utils'
 import RepRadarChart from '@/components/dashboard/RepRadarChart'
 
 export default async function RepDashboard() {
-  const supabase = await createClient()
-
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) redirect('/auth/login')
-
-  const { data: profile } = await supabase
-    .from('users')
-    .select('*')
-    .eq('id', user.id)
-    .single()
+  const supabase = createAdminClient()
 
   const { data: sessions } = await supabase
     .from('sessions')
     .select('*, personas(title, industry, difficulty)')
-    .eq('user_id', user.id)
+    .eq('user_id', DEMO_USER.id)
     .order('created_at', { ascending: false })
 
   const completedSessions = (sessions || []).filter((s: Session) => s.scores !== null)
   const totalSessions = sessions?.length || 0
 
-  // Compute averages
   const avgScores = completedSessions.length > 0
     ? {
         discovery: avg(completedSessions.map((s: Session) => s.scores!.scores.discovery)),
@@ -44,7 +34,7 @@ export default async function RepDashboard() {
       <div className="flex items-center justify-between mb-8">
         <div>
           <h1 className="text-2xl font-bold text-white">My Dashboard</h1>
-          <p className="text-white/40 text-sm mt-1">Welcome back, {profile?.name}</p>
+          <p className="text-white/40 text-sm mt-1">Welcome back, {DEMO_USER.name}</p>
         </div>
         <Link
           href="/simulate"
@@ -54,7 +44,6 @@ export default async function RepDashboard() {
         </Link>
       </div>
 
-      {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
         <StatCard label="Total Sessions" value={String(totalSessions)} />
         <StatCard label="Completed" value={String(completedSessions.length)} />
@@ -70,9 +59,7 @@ export default async function RepDashboard() {
         />
       </div>
 
-      {/* Charts + History */}
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
-        {/* Radar */}
         <div className="lg:col-span-2 bg-white/[0.03] border border-white/8 rounded-2xl p-6">
           <h2 className="text-sm font-semibold text-white/70 mb-4">Skill Breakdown</h2>
           {avgScores ? (
@@ -84,7 +71,6 @@ export default async function RepDashboard() {
           )}
         </div>
 
-        {/* Session history */}
         <div className="lg:col-span-3 bg-white/[0.03] border border-white/8 rounded-2xl p-6">
           <h2 className="text-sm font-semibold text-white/70 mb-4">Session History</h2>
           {sessions && sessions.length > 0 ? (
@@ -131,10 +117,7 @@ function avg(nums: number[]) {
 }
 
 function StatCard({ label, value, highlight = '', small = false }: {
-  label: string
-  value: string
-  highlight?: string
-  small?: boolean
+  label: string; value: string; highlight?: string; small?: boolean
 }) {
   return (
     <div className="bg-white/[0.03] border border-white/8 rounded-2xl p-5">
