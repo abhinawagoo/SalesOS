@@ -1,73 +1,99 @@
 import { NextRequest, NextResponse } from 'next/server'
-import Anthropic from '@anthropic-ai/sdk'
+import OpenAI from 'openai'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { Message, Persona, SessionScore } from '@/lib/types'
+import { Message, Persona, ScenarioType, SessionScore } from '@/lib/types'
 import { z } from 'zod'
 
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY!,
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! })
+
+// ─── Zod Schema ──────────────────────────────────────────────────────────────
+
+const SubSkill = z.object({
+  score: z.number().min(1).max(10),
+  explanation: z.string(),
+  evidence: z.string(),
+})
+
+const Category = z.object({
+  score: z.number().min(1).max(10),
+  sub_skills: z.record(z.string(), SubSkill),
 })
 
 const ScoreSchema = z.object({
-  scores: z.object({
-    discovery: z.number().min(0).max(10),
-    objection_handling: z.number().min(0).max(10),
-    value_articulation: z.number().min(0).max(10),
-    clarity: z.number().min(0).max(10),
-    closing: z.number().min(0).max(10),
+  overall_score: z.number().min(1).max(10),
+  categories: z.object({
+    discovery: Category,
+    objection_handling: Category,
+    value_articulation: Category,
+    closing: Category,
   }),
-  summary: z.string(),
-  strengths: z.array(z.string()),
-  weaknesses: z.array(z.string()),
-  coaching_suggestions: z.array(z.string()),
+  coaching: z.object({
+    strengths: z.array(z.object({ behavior: z.string(), evidence: z.string() })),
+    weaknesses: z.array(z.object({ behavior: z.string(), evidence: z.string() })),
+    top_performer_rewrites: z.array(z.object({
+      original: z.string(),
+      improved: z.string(),
+      context: z.string(),
+    })),
+    focus_recommendation: z.string(),
+  }),
 })
 
-const SCORING_PROMPT = `You are an expert sales coach analyzing a sales conversation transcript.
+// ─── Scoring Prompt ──────────────────────────────────────────────────────────
 
-Analyze the SALES REP's performance (NOT the buyer). Score on these 5 dimensions (0-10):
+const SCORING_SYSTEM = `You are an expert enterprise sales coach. Analyze the SALES REP's performance only (not the buyer).
 
-- discovery: Did they ask effective open-ended questions? Uncover needs and pain points?
-- objection_handling: Did they address objections directly? Use proof and reframes?
-- value_articulation: Did they clearly communicate value specific to this buyer?
-- clarity: Were their explanations clear, concise, and confident?
-- closing: Did they drive toward next steps? Create urgency appropriately?
+Score 4 categories, each with 3 sub-skills (scale 1-10):
 
-Scoring guide:
-- 9-10: Exceptional, best-in-class
-- 7-8: Strong, above average
-- 5-6: Developing, needs improvement
-- 3-4: Weak, major gaps
-- 0-2: Poor, fundamental issues
+DISCOVERY
+- problem_depth: Did they uncover deep pain, root causes, and business impact?
+- quantification: Did they quantify the problem in business terms (revenue, cost, time)?
+- stakeholder_identification: Did they identify decision makers and influencers?
 
-CRITICAL: Return ONLY valid JSON with this exact structure. No preamble, no markdown:
-{
-  "scores": {
-    "discovery": <number>,
-    "objection_handling": <number>,
-    "value_articulation": <number>,
-    "clarity": <number>,
-    "closing": <number>
-  },
-  "summary": "<2-3 sentence objective summary of the rep's overall performance>",
-  "strengths": ["<specific strength 1>", "<specific strength 2>"],
-  "weaknesses": ["<specific weakness 1>", "<specific weakness 2>"],
-  "coaching_suggestions": ["<actionable suggestion 1>", "<actionable suggestion 2>", "<actionable suggestion 3>"]
-}`
+OBJECTION_HANDLING
+- acknowledgement: Did they empathetically acknowledge objections before responding?
+- reframing: Did they reframe objections into value opportunities?
+- confidence_control: Did they stay in control and confident under pressure?
+
+VALUE_ARTICULATION
+- roi_clarity: Did they present specific ROI tied to this buyer's situation?
+- differentiation: Did they differentiate from alternatives/status quo concretely?
+- use_case_relevance: Did they map the solution to this buyer's exact use case?
+
+CLOSING
+- clear_next_step: Did they propose a specific, concrete next step?
+- timeline_alignment: Did they understand and work with the buyer's timeline?
+- commitment_securing: Did they get any form of commitment or micro-agreement?
+
+For each sub-skill provide:
+- score (1-10)
+- explanation (1-2 sentences of analysis)
+- evidence (exact direct quote from rep in transcript, or "No clear evidence")
+
+Category score = average of its 3 sub-skills (1 decimal).
+Overall score = average of 4 categories (1 decimal).
+
+Coaching section:
+- strengths: exactly 3 strong behaviors with evidence quotes
+- weaknesses: exactly 3 improvement areas with evidence quotes
+- top_performer_rewrites: 2-3 cases where rep was weak — show original rep quote and an improved top-performer version
+- focus_recommendation: one specific sentence on what to work on next
+
+Return ONLY valid JSON. No markdown, no code blocks, no extra text.`
+
+// ─── Route ───────────────────────────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
   try {
     const supabase = createAdminClient()
-
-    const { sessionId, messages, persona } = await req.json() as {
+    const { sessionId, messages, persona, scenarioType } = await req.json() as {
       sessionId: string
       messages: Message[]
       persona: Persona
+      scenarioType: ScenarioType
     }
 
-    // Build transcript text
     const repMessages = messages.filter((m) => m.role === 'user')
-    const buyerMessages = messages.filter((m) => m.role === 'assistant')
-
     if (repMessages.length === 0) {
       return NextResponse.json({ error: 'No rep messages to score' }, { status: 400 })
     }
@@ -77,44 +103,33 @@ export async function POST(req: NextRequest) {
       .map((m) => `${m.role === 'user' ? 'SALES REP' : `BUYER (${persona.title})`}: ${m.content}`)
       .join('\n\n')
 
-    const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 1000,
+    const response = await openai.chat.completions.create({
+      model: 'gpt-4o',
+      max_tokens: 2500,
+      response_format: { type: 'json_object' },
       messages: [
+        { role: 'system', content: SCORING_SYSTEM },
         {
           role: 'user',
-          content: `${SCORING_PROMPT}\n\nBUYER CONTEXT:\nPersona: ${persona.title}\nRole: ${persona.buyer_role}\nIndustry: ${persona.industry}\nDifficulty: ${persona.difficulty}\n\nTRANSCRIPT:\n${transcriptText}`,
+          content: `CONTEXT:\nScenario: ${scenarioType}\nBuyer: ${persona.title} (${persona.buyer_role})\nIndustry: ${persona.industry}\nDifficulty: ${persona.difficulty}\n\nTRANSCRIPT:\n${transcriptText}`,
         },
       ],
     })
 
-    const rawText = response.content[0].type === 'text' ? response.content[0].text : ''
+    const rawText = response.choices[0]?.message?.content ?? ''
 
-    // Parse and validate JSON
     let parsedScore: SessionScore
     try {
-      const jsonMatch = rawText.match(/\{[\s\S]*\}/)
-      if (!jsonMatch) throw new Error('No JSON found in response')
-
-      const parsed = JSON.parse(jsonMatch[0])
-      parsedScore = ScoreSchema.parse(parsed)
+      parsedScore = ScoreSchema.parse(JSON.parse(rawText)) as SessionScore
     } catch (parseErr) {
-      console.error('Score parsing error:', parseErr, rawText)
+      console.error('Score parse error:', parseErr, rawText.slice(0, 500))
       return NextResponse.json({ error: 'Failed to parse score' }, { status: 500 })
     }
 
-    // Save score to DB
-    const { error: updateError } = await supabase
+    await supabase
       .from('sessions')
-      .update({
-        scores: parsedScore,
-        transcript: messages,
-      })
+      .update({ scores: parsedScore, transcript: messages, scenario_type: scenarioType })
       .eq('id', sessionId)
-
-    if (updateError) {
-      console.error('DB update error:', updateError)
-    }
 
     return NextResponse.json({ score: parsedScore })
   } catch (err) {

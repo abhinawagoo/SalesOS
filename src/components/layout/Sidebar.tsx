@@ -19,6 +19,7 @@ const managerLinks = [
   { href: '/dashboard/manager', label: 'Team Overview', icon: '▦' },
   { href: '/dashboard/rep', label: 'My Dashboard', icon: '◉' },
   { href: '/simulate', label: 'Simulate', icon: '◈' },
+  { href: '/assignments', label: 'Assignments', icon: '◫' },
   { href: '/personas', label: 'Personas', icon: '◭' },
 ]
 

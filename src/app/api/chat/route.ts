@@ -1,84 +1,67 @@
 import { NextRequest, NextResponse } from 'next/server'
-import Anthropic from '@anthropic-ai/sdk'
+import OpenAI from 'openai'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { Persona, Message } from '@/lib/types'
+import { Persona, Message, ScenarioType } from '@/lib/types'
 
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY!,
-})
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! })
 
-function buildSystemPrompt(persona: Persona): string {
-  const difficultyInstructions = {
-    easy: 'Be moderately skeptical. Raise 1-2 objections but be receptive to good answers.',
-    medium: 'Be clearly skeptical. Raise multiple objections. Push back on weak answers. Require specific evidence.',
-    hard: 'Be highly skeptical and demanding. Challenge every claim. Demand ROI numbers, case studies, and proof. Be time-pressed and impatient.',
+const SCENARIO_CONTEXT: Record<ScenarioType, string> = {
+  cold_outbound: 'This is a cold outreach call. You were not expecting this call. Be naturally skeptical about giving time and question their relevance immediately.',
+  discovery: 'This is a discovery call. You agreed to learn more. Be somewhat open but make the rep work to uncover your pain — don\'t volunteer information.',
+  objection_handling: 'The rep has already pitched you. You have serious concerns. Push back hard on budget, timing, and existing solutions.',
+  closing: 'You have evaluated the solution. Now you\'re stalling. The rep needs to address final objections and get you to commit to a next step.',
+}
+
+function buildSystemPrompt(persona: Persona, scenarioType: ScenarioType): string {
+  const difficulty = {
+    easy: 'Be moderately skeptical. Raise 1-2 objections but respond to good answers.',
+    medium: 'Be clearly skeptical. Raise multiple objections. Push back on weak or vague answers.',
+    hard: 'Be highly skeptical. Challenge every claim. Demand ROI proof, reference customers, and specific numbers. You are time-pressed and have seen 3 competing solutions.',
   }
 
   return `You are ${persona.title}, a ${persona.buyer_role} at a ${persona.industry} company.
 
 PERSONALITY: ${persona.personality_traits?.join(', ')}
-
 OBJECTION STYLE: ${persona.objection_style}
-
-DIFFICULTY: ${difficultyInstructions[persona.difficulty]}
+SCENARIO: ${SCENARIO_CONTEXT[scenarioType]}
+DIFFICULTY: ${difficulty[persona.difficulty]}
 
 RULES:
-- Stay completely in character as this buyer. Never break character.
-- Be realistic and professional, not cartoonishly hostile.
-- Raise real enterprise sales objections: budget, timing, existing solutions, ROI, integration complexity, stakeholder buy-in.
-- Ask challenging questions that real buyers ask.
-- Do not be easily convinced. Require the rep to earn your trust.
-- Keep responses to 2-4 sentences max. You are a busy executive.
-- If the rep asks good discovery questions, respond with useful but guarded information.
-- If the rep gives vague answers, push back directly.
-- Do not volunteer information — make the rep work for it.
-- You have evaluated 3 competing solutions already.`
+- Stay completely in character. Never break character or acknowledge being AI.
+- Be realistic, not cartoonishly hostile.
+- Introduce at least one of: budget concern, timing conflict, competitor mention, or status quo defense.
+- Keep every response to 2-4 sentences max. You are a busy executive.
+- Do not volunteer information — make the rep earn it.
+- Push back directly on vague or weak responses.
+- If the rep earns it with good questions and answers, gradually soften — but stay skeptical.`
 }
 
 export async function POST(req: NextRequest) {
   try {
     const supabase = createAdminClient()
-
-    const { sessionId, persona, messages, userMessage } = await req.json() as {
+    const { sessionId, persona, messages, userMessage, scenarioType } = await req.json() as {
       sessionId: string
       persona: Persona
       messages: Message[]
       userMessage: string | null
+      scenarioType: ScenarioType
     }
 
-    const systemPrompt = buildSystemPrompt(persona)
-
-    // Build message history for Claude
-    // Filter to only user/assistant messages (not system)
+    const systemPrompt = buildSystemPrompt(persona, scenarioType)
     const history = messages.filter((m) => m.role === 'user' || m.role === 'assistant')
 
-    // If no user message (opening), buyer speaks first
-    let claudeMessages: Anthropic.MessageParam[]
+    const chatMessages: OpenAI.Chat.ChatCompletionMessageParam[] = !userMessage
+      ? [{ role: 'user', content: 'Start the call. You just answered the phone or joined the meeting. Give a brief, slightly skeptical opening — 1-2 sentences max.' }]
+      : history.map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content }))
 
-    if (!userMessage) {
-      claudeMessages = [
-        {
-          role: 'user',
-          content: 'Open the conversation. You just got on a sales call. Give your opening statement as this buyer — brief, a bit skeptical. Ask what they want to discuss.',
-        },
-      ]
-    } else {
-      claudeMessages = history.map((m) => ({
-        role: m.role as 'user' | 'assistant',
-        content: m.content,
-      }))
-    }
-
-    const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 300,
-      system: systemPrompt,
-      messages: claudeMessages,
+    const response = await openai.chat.completions.create({
+      model: 'gpt-4o',
+      max_tokens: 250,
+      messages: [{ role: 'system', content: systemPrompt }, ...chatMessages],
     })
 
-    const reply = response.content[0].type === 'text' ? response.content[0].text : ''
+    const reply = response.choices[0]?.message?.content ?? ''
 
-    // Update transcript in DB
     const newTranscript = userMessage
       ? [...messages, { role: 'assistant', content: reply }]
       : [{ role: 'assistant', content: reply }]
