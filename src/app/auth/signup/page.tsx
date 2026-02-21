@@ -12,6 +12,7 @@ export default function SignupPage() {
   const [role, setRole] = useState<'rep' | 'manager'>('rep')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [emailSent, setEmailSent] = useState(false)
 
   async function handleSignup(e: React.FormEvent) {
     e.preventDefault()
@@ -20,12 +21,14 @@ export default function SignupPage() {
 
     const supabase = createClient()
 
-    // Sign up with Supabase auth
-    const { data: authData, error: authError } = await supabase.auth.signUp({
+    const { data, error: authError } = await supabase.auth.signUp({
       email,
       password,
       options: {
+        // Metadata picked up by the DB trigger to create org + profile
         data: { name, role, org_name: orgName },
+        // Redirect back to the callback route after email confirmation
+        emailRedirectTo: `${window.location.origin}/auth/callback`,
       },
     })
 
@@ -35,23 +38,34 @@ export default function SignupPage() {
       return
     }
 
-    if (authData.user) {
-      // Create org + user profile via API
-      const res = await fetch('/api/auth/setup', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: authData.user.id, name, email, role, orgName }),
-      })
-
-      if (!res.ok) {
-        const d = await res.json()
-        setError(d.error || 'Setup failed')
-        setLoading(false)
-        return
-      }
-
+    if (data.session) {
+      // Email confirmation is OFF — logged in immediately, trigger already ran
       window.location.href = '/dashboard/rep'
+    } else {
+      // Email confirmation is ON — show "check your inbox" state
+      setEmailSent(true)
+      setLoading(false)
     }
+  }
+
+  if (emailSent) {
+    return (
+      <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center px-4">
+        <div className="w-full max-w-sm text-center">
+          <div className="w-12 h-12 rounded-2xl bg-indigo-600/20 border border-indigo-500/20 flex items-center justify-center mx-auto mb-4 text-2xl">
+            ✉
+          </div>
+          <h1 className="text-lg font-semibold text-white mb-2">Check your email</h1>
+          <p className="text-sm text-white/40 mb-6">
+            We sent a confirmation link to <span className="text-white/70">{email}</span>.
+            Click it to activate your account and get started.
+          </p>
+          <Link href="/auth/login" className="text-indigo-400 text-sm hover:text-indigo-300">
+            Back to sign in
+          </Link>
+        </div>
+      </div>
+    )
   }
 
   return (
