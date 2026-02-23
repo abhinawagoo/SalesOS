@@ -1,15 +1,17 @@
 'use client'
 
 import { useState } from 'react'
-import { SessionScore, Persona, ScenarioType, SCENARIO_LABELS } from '@/lib/types'
+import { SessionScore, Persona, ScenarioType, SCENARIO_LABELS, Message } from '@/lib/types'
 import { scoreColor, scoreBg, cn } from '@/lib/utils'
 import Link from 'next/link'
 import CategoryRadarChart from '@/components/dashboard/CategoryRadarChart'
+import ScoreGauge from '@/components/analytics/ScoreGauge'
 
 interface ScoreCardProps {
   score: SessionScore
   persona: Persona
   scenarioType: ScenarioType
+  messages: Message[]
   onReset: () => void
 }
 
@@ -32,9 +34,9 @@ const CATEGORY_META = {
   },
 }
 
-type Tab = 'breakdown' | 'strengths' | 'weaknesses' | 'rewrites' | 'focus'
+type Tab = 'breakdown' | 'strengths' | 'weaknesses' | 'rewrites' | 'focus' | 'transcript'
 
-export default function ScoreCard({ score, persona, scenarioType, onReset }: ScoreCardProps) {
+export default function ScoreCard({ score, persona, scenarioType, messages, onReset }: ScoreCardProps) {
   const [activeTab, setActiveTab] = useState<Tab>('breakdown')
   const [expandedCategory, setExpandedCategory] = useState<string | null>('discovery')
 
@@ -44,6 +46,7 @@ export default function ScoreCard({ score, persona, scenarioType, onReset }: Sco
     { id: 'weaknesses', label: `Improve (${score.coaching.weaknesses.length})` },
     { id: 'rewrites', label: 'Top Performer' },
     { id: 'focus', label: 'Focus' },
+    { id: 'transcript', label: 'Transcript' },
   ]
 
   return (
@@ -57,10 +60,7 @@ export default function ScoreCard({ score, persona, scenarioType, onReset }: Sco
             <span className="text-xs text-white/30">vs. {persona.title} · {persona.industry}</span>
           </div>
         </div>
-        <div className="text-right">
-          <div className={`text-5xl font-bold ${scoreColor(score.overall_score)}`}>{score.overall_score}</div>
-          <div className="text-xs text-white/30 mt-1">/ 10 overall</div>
-        </div>
+        <ScoreGauge score={score.overall_score} label="Overall" size={120} />
       </div>
 
       {/* Category summary row */}
@@ -152,7 +152,7 @@ export default function ScoreCard({ score, persona, scenarioType, onReset }: Sco
                             <p className="text-xs text-white/40 mb-1.5">{subSkill.explanation}</p>
                             {subSkill.evidence && subSkill.evidence !== 'No clear evidence' && (
                               <blockquote className="text-xs text-white/30 italic border-l-2 border-white/10 pl-2">
-                                "{subSkill.evidence}"
+                                &quot;{subSkill.evidence}&quot;
                               </blockquote>
                             )}
                           </div>
@@ -177,7 +177,7 @@ export default function ScoreCard({ score, persona, scenarioType, onReset }: Sco
                 <div>
                   <p className="text-sm text-white/80 mb-2">{s.behavior}</p>
                   <blockquote className="text-xs text-emerald-400/60 italic border-l-2 border-emerald-500/20 pl-2">
-                    "{s.evidence}"
+                    &quot;{s.evidence}&quot;
                   </blockquote>
                 </div>
               </div>
@@ -196,7 +196,7 @@ export default function ScoreCard({ score, persona, scenarioType, onReset }: Sco
                 <div>
                   <p className="text-sm text-white/80 mb-2">{w.behavior}</p>
                   <blockquote className="text-xs text-red-400/60 italic border-l-2 border-red-500/20 pl-2">
-                    "{w.evidence}"
+                    &quot;{w.evidence}&quot;
                   </blockquote>
                 </div>
               </div>
@@ -219,13 +219,13 @@ export default function ScoreCard({ score, persona, scenarioType, onReset }: Sco
                   <div className="text-[10px] text-red-400/60 uppercase tracking-wider mb-2 flex items-center gap-1">
                     <span>✗</span> What you said
                   </div>
-                  <p className="text-sm text-white/50 italic">"{r.original}"</p>
+                  <p className="text-sm text-white/50 italic">&quot;{r.original}&quot;</p>
                 </div>
                 <div className="p-4">
                   <div className="text-[10px] text-emerald-400/60 uppercase tracking-wider mb-2 flex items-center gap-1">
                     <span>✓</span> Top performer would say
                   </div>
-                  <p className="text-sm text-emerald-300/80 italic">"{r.improved}"</p>
+                  <p className="text-sm text-emerald-300/80 italic">&quot;{r.improved}&quot;</p>
                 </div>
               </div>
             </div>
@@ -252,6 +252,32 @@ export default function ScoreCard({ score, persona, scenarioType, onReset }: Sco
               )
             })()}
           </div>
+        </div>
+      )}
+
+      {/* Tab: Transcript */}
+      {activeTab === 'transcript' && (
+        <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-2">
+          {messages.filter(m => m.role !== 'system').map((msg, i) => (
+            <div key={i} className={cn('flex', msg.role === 'user' ? 'justify-end' : 'justify-start')}>
+              {msg.role === 'assistant' && (
+                <div className="w-7 h-7 rounded-full bg-indigo-600/20 flex items-center justify-center text-xs text-indigo-300 mr-2 flex-shrink-0 mt-0.5">
+                  {persona.buyer_role.charAt(0)}
+                </div>
+              )}
+              <div className={cn(
+                'max-w-[75%] rounded-2xl px-4 py-3 text-sm leading-relaxed',
+                msg.role === 'user'
+                  ? 'bg-indigo-600/20 text-white/90 rounded-tr-sm border border-indigo-500/20'
+                  : 'bg-white/[0.06] text-white/75 border border-white/8 rounded-tl-sm'
+              )}>
+                <div className="text-[10px] text-white/30 mb-1 uppercase tracking-wider">
+                  {msg.role === 'user' ? 'You' : persona.buyer_role}
+                </div>
+                {msg.content}
+              </div>
+            </div>
+          ))}
         </div>
       )}
 

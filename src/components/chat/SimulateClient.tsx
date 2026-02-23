@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from 'react'
 import { Persona, Message, SessionScore, ScenarioType, SCENARIO_LABELS, SCENARIO_DESCRIPTIONS } from '@/lib/types'
 import { cn } from '@/lib/utils'
 import ScoreCard from '@/components/chat/ScoreCard'
+import VoiceChat from '@/components/chat/VoiceChat'
 
 interface SimulateClientProps {
   personas: Persona[]
@@ -11,6 +12,7 @@ interface SimulateClientProps {
 }
 
 type Phase = 'scenario' | 'persona' | 'chat' | 'scored'
+type Mode = 'text' | 'voice'
 
 const SCENARIO_ICONS: Record<ScenarioType, string> = {
   cold_outbound: '📞',
@@ -29,6 +31,7 @@ export default function SimulateClient({ personas, userId }: SimulateClientProps
   const [loading, setLoading] = useState(false)
   const [scoring, setScoring] = useState(false)
   const [score, setScore] = useState<SessionScore | null>(null)
+  const [mode, setMode] = useState<Mode>('text')
   const bottomRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -78,14 +81,16 @@ export default function SimulateClient({ personas, userId }: SimulateClientProps
     setLoading(false)
   }
 
-  async function endSession() {
-    if (!sessionId || !selectedPersona || messages.filter(m => m.role === 'user').length === 0) return
+  async function endSession(finalMessages?: Message[]) {
+    const msgsToScore = finalMessages ?? messages
+    if (!sessionId || !selectedPersona || msgsToScore.filter(m => m.role === 'user').length === 0) return
+    if (finalMessages) setMessages(finalMessages)
     setScoring(true)
 
     const res = await fetch('/api/score', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sessionId, messages, persona: selectedPersona, scenarioType: selectedScenario }),
+      body: JSON.stringify({ sessionId, messages: msgsToScore, persona: selectedPersona, scenarioType: selectedScenario }),
     })
     const data = await res.json()
     setScore(data.score)
@@ -101,6 +106,7 @@ export default function SimulateClient({ personas, userId }: SimulateClientProps
     setMessages([])
     setInput('')
     setScore(null)
+    setMode('text')
   }
 
   // ── Scenario selection ──
@@ -108,7 +114,7 @@ export default function SimulateClient({ personas, userId }: SimulateClientProps
     return (
       <div className="p-8 max-w-4xl mx-auto">
         <div className="mb-8">
-          <h1 className="text-2xl font-bold text-white">New Simulation</h1>
+          <h1 className="text-2xl font-bold text-white">New Roleplay</h1>
           <p className="text-white/40 text-sm mt-1">Step 1 of 2 — Select scenario type</p>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -139,7 +145,7 @@ export default function SimulateClient({ personas, userId }: SimulateClientProps
           <button onClick={() => setPhase('scenario')} className="text-xs text-white/30 hover:text-white/60 mb-4 flex items-center gap-1">
             ← Back
           </button>
-          <h1 className="text-2xl font-bold text-white">New Simulation</h1>
+          <h1 className="text-2xl font-bold text-white">New Roleplay</h1>
           <div className="flex items-center gap-2 mt-1">
             <span className="text-xs bg-indigo-600/20 text-indigo-400 px-2 py-0.5 rounded-full">{SCENARIO_LABELS[selectedScenario!]}</span>
             <span className="text-white/30 text-xs">Step 2 of 2 — Select buyer</span>
@@ -182,10 +188,36 @@ export default function SimulateClient({ personas, userId }: SimulateClientProps
 
   // ── Scored ──
   if (phase === 'scored' && score) {
-    return <ScoreCard score={score} persona={selectedPersona!} scenarioType={selectedScenario!} onReset={reset} />
+    return <ScoreCard score={score} persona={selectedPersona!} scenarioType={selectedScenario!} messages={messages} onReset={reset} />
   }
 
-  // ── Live chat ──
+  // ── Voice mode ──
+  if (phase === 'chat' && mode === 'voice' && selectedPersona && sessionId) {
+    if (scoring) {
+      return (
+        <div className="h-screen flex items-center justify-center">
+          <div className="text-center">
+            <div className="text-white/40 text-sm mb-2">Analyzing your call...</div>
+            <div className="flex gap-1 justify-center">
+              {[0,1,2].map(i => <div key={i} className="w-2 h-2 rounded-full bg-indigo-400 animate-bounce" style={{ animationDelay: `${i*0.15}s` }} />)}
+            </div>
+          </div>
+        </div>
+      )
+    }
+    return (
+      <VoiceChat
+        sessionId={sessionId}
+        persona={selectedPersona}
+        scenarioType={selectedScenario!}
+        initialAIMessage={messages[0]?.content ?? ''}
+        onEnd={(voiceMessages) => endSession(voiceMessages)}
+        onSwitchToText={() => setMode('text')}
+      />
+    )
+  }
+
+  // ── Live text chat ──
   return (
     <div className="flex flex-col h-screen">
       <div className="border-b border-white/5 px-6 py-4 flex items-center justify-between">
@@ -206,13 +238,23 @@ export default function SimulateClient({ personas, userId }: SimulateClientProps
             'bg-emerald-500/10 text-emerald-400'
           )}>{selectedPersona?.difficulty}</span>
         </div>
-        <button
-          onClick={endSession}
-          disabled={scoring || messages.filter(m => m.role === 'user').length === 0}
-          className="text-xs bg-white/5 hover:bg-white/10 border border-white/10 text-white/60 hover:text-white px-4 py-2 rounded-lg transition-all disabled:opacity-30"
-        >
-          {scoring ? 'Scoring...' : 'End & Score'}
-        </button>
+        <div className="flex items-center gap-2">
+          {/* Voice toggle */}
+          <button
+            onClick={() => setMode('voice')}
+            className="flex items-center gap-1.5 text-xs bg-white/5 hover:bg-indigo-600/20 border border-white/10 hover:border-indigo-500/30 text-white/50 hover:text-indigo-300 px-3 py-2 rounded-lg transition-all"
+            title="Switch to voice mode"
+          >
+            <span>🎙</span> Voice
+          </button>
+          <button
+            onClick={() => endSession()}
+            disabled={scoring || messages.filter(m => m.role === 'user').length === 0}
+            className="text-xs bg-white/5 hover:bg-white/10 border border-white/10 text-white/60 hover:text-white px-4 py-2 rounded-lg transition-all disabled:opacity-30"
+          >
+            {scoring ? 'Scoring...' : 'End & Score'}
+          </button>
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto px-6 py-6 space-y-4">

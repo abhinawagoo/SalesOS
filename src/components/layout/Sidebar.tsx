@@ -12,18 +12,21 @@ interface SidebarProps {
 
 const repLinks = [
   { href: '/dashboard/rep', label: 'Dashboard', icon: '▦' },
-  { href: '/simulate', label: 'Simulate', icon: '◈' },
+  { href: '/simulate', label: 'Roleplay', icon: '◈' },
+  { href: '/analytics', label: 'Analytics', icon: '◎' },
 ]
 
 const managerLinks = [
   { href: '/dashboard/manager', label: 'Team Overview', icon: '▦' },
-  { href: '/dashboard/rep', label: 'My Dashboard', icon: '◉' },
-  { href: '/simulate', label: 'Simulate', icon: '◈' },
+  { href: '/dashboard/rep', label: 'My Stats', icon: '◉' },
+  { href: '/simulate', label: 'Roleplay', icon: '◈' },
+  { href: '/analytics', label: 'Analytics', icon: '◎' },
   { href: '/assignments', label: 'Assignments', icon: '◫' },
   { href: '/personas', label: 'Personas', icon: '◭' },
 ]
 
 const bottomLinks = [
+  { href: '/settings', label: 'Settings', icon: '⚙' },
   { href: '/architecture', label: 'Architecture', icon: '⬡' },
 ]
 
