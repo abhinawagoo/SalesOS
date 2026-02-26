@@ -42,6 +42,7 @@ export interface Persona {
   personality_traits: string[]
   objection_style: string
   organization_id: string | null
+  voice?: string        // OpenAI TTS voice (alloy|echo|fable|onyx|nova|shimmer)
   created_at: string
 }
 
@@ -154,6 +155,61 @@ export interface Assignment {
   rep?: UserProfile
   manager?: UserProfile
   sessions?: Session
+}
+
+// ─── Knowledge Base ──────────────────────────────────────────────────────────
+
+export interface KnowledgeItem {
+  id: string
+  organization_id: string
+  title: string
+  content: string
+  item_type: string
+  metadata: Record<string, unknown>
+  created_at: string
+}
+
+// ─── Company Config / Playbook ───────────────────────────────────────────────
+
+export interface CompanyConfig {
+  id: string
+  organization_id: string
+  icp_description: string
+  must_ask_questions: string[]
+  key_differentiators: string[]
+  forbidden_phrases: string[]
+  scoring_focus: string[]
+  competitor_names: string[]
+  updated_at: string
+}
+
+// ─── Hiring / Candidates ────────────────────────────────────────────────────
+
+export type CandidateStatus = 'invited' | 'in_progress' | 'completed' | 'hired' | 'rejected'
+
+export interface Candidate {
+  id: string
+  organization_id: string
+  invited_by: string
+  name: string
+  email: string
+  role_applied: string
+  status: CandidateStatus
+  assessment_token: string
+  token_expires_at: string
+  overall_score: number | null
+  notes: string
+  created_at: string
+}
+
+export interface CandidateSession {
+  id: string
+  candidate_id: string
+  persona_id: string
+  scenario_type: string
+  transcript: Message[]
+  scores: SessionScore | null
+  created_at: string
 }
 
 // ─── Dashboard helpers ───────────────────────────────────────────────────────

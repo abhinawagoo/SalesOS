@@ -16,10 +16,21 @@ const DIFFICULTY_COLORS = {
   hard: 'bg-red-500/10 text-red-400',
 }
 
-export default function PersonaManager({ personas, organizationId }: PersonaManagerProps) {
+export const VOICE_OPTIONS = [
+  { value: 'nova',    label: 'Nova',    desc: 'Female · Energetic',   sample: '♀' },
+  { value: 'shimmer', label: 'Shimmer', desc: 'Female · Soft',        sample: '♀' },
+  { value: 'alloy',   label: 'Alloy',   desc: 'Neutral · Balanced',   sample: '◎' },
+  { value: 'echo',    label: 'Echo',    desc: 'Male · Articulate',    sample: '♂' },
+  { value: 'fable',   label: 'Fable',   desc: 'Male · British',       sample: '♂' },
+  { value: 'onyx',    label: 'Onyx',    desc: 'Male · Deep',          sample: '♂' },
+]
+
+export default function PersonaManager({ personas: initialPersonas, organizationId }: PersonaManagerProps) {
   const router = useRouter()
+  const [personas, setPersonas] = useState<Persona[]>(initialPersonas)
   const [showForm, setShowForm] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [editingVoice, setEditingVoice] = useState<string | null>(null)
   const [form, setForm] = useState({
     title: '',
     industry: '',
@@ -27,6 +38,7 @@ export default function PersonaManager({ personas, organizationId }: PersonaMana
     difficulty: 'medium' as Persona['difficulty'],
     personality_traits: '',
     objection_style: '',
+    voice: 'nova',
   })
 
   async function handleCreate(e: React.FormEvent) {
@@ -42,13 +54,27 @@ export default function PersonaManager({ personas, organizationId }: PersonaMana
         organization_id: organizationId,
       }),
     })
-
-    if (res.ok) {
+    const data = await res.json()
+    if (data.persona) {
+      setPersonas(prev => [...prev, data.persona])
       setShowForm(false)
-      setForm({ title: '', industry: '', buyer_role: '', difficulty: 'medium', personality_traits: '', objection_style: '' })
-      router.refresh()
+      setForm({ title: '', industry: '', buyer_role: '', difficulty: 'medium', personality_traits: '', objection_style: '', voice: 'nova' })
     }
     setSaving(false)
+  }
+
+  async function updateVoice(personaId: string, voice: string) {
+    const res = await fetch('/api/personas', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: personaId, voice }),
+    })
+    const data = await res.json()
+    if (data.persona) {
+      setPersonas(prev => prev.map(p => p.id === personaId ? { ...p, voice } : p))
+    }
+    setEditingVoice(null)
+    router.refresh()
   }
 
   return (
@@ -113,7 +139,21 @@ export default function PersonaManager({ personas, organizationId }: PersonaMana
                 <option value="hard" className="bg-[#1a1a2e]">Hard</option>
               </select>
             </div>
-            <div className="col-span-2">
+            <div>
+              <label className="block text-xs text-white/40 mb-1.5">Voice</label>
+              <select
+                value={form.voice}
+                onChange={(e) => setForm({ ...form, voice: e.target.value })}
+                className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500/50"
+              >
+                {VOICE_OPTIONS.map(v => (
+                  <option key={v.value} value={v.value} className="bg-[#1a1a2e]">
+                    {v.label} — {v.desc}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
               <label className="block text-xs text-white/40 mb-1.5">Personality Traits (comma-separated)</label>
               <input
                 value={form.personality_traits}
@@ -148,31 +188,78 @@ export default function PersonaManager({ personas, organizationId }: PersonaMana
 
       {/* Persona list */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {personas.map((persona) => (
-          <div key={persona.id} className="bg-white/[0.03] border border-white/8 rounded-2xl p-5">
-            <div className="flex items-start justify-between mb-3">
-              <div className="w-9 h-9 rounded-xl bg-indigo-600/20 flex items-center justify-center text-sm">
-                {persona.buyer_role.charAt(0)}
+        {personas.map((persona) => {
+          const voiceInfo = VOICE_OPTIONS.find(v => v.value === (persona.voice || 'nova')) ?? VOICE_OPTIONS[0]
+          return (
+            <div key={persona.id} className="bg-white/[0.03] border border-white/8 rounded-2xl p-5">
+              <div className="flex items-start justify-between mb-3">
+                <div className="w-9 h-9 rounded-xl bg-indigo-600/20 flex items-center justify-center text-sm font-semibold text-indigo-300">
+                  {persona.buyer_role.charAt(0)}
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className={cn('text-xs px-2 py-0.5 rounded-full', DIFFICULTY_COLORS[persona.difficulty])}>
+                    {persona.difficulty}
+                  </span>
+                  {persona.organization_id === null && (
+                    <span className="text-xs bg-indigo-500/10 text-indigo-400 px-2 py-0.5 rounded-full">Default</span>
+                  )}
+                </div>
               </div>
-              <div className="flex items-center gap-2">
-                <span className={cn('text-xs px-2 py-0.5 rounded-full', DIFFICULTY_COLORS[persona.difficulty])}>
-                  {persona.difficulty}
-                </span>
-                {persona.organization_id === null && (
-                  <span className="text-xs bg-indigo-500/10 text-indigo-400 px-2 py-0.5 rounded-full">Default</span>
+              <div className="text-sm font-semibold text-white mb-1">{persona.title}</div>
+              <div className="text-xs text-white/40 mb-3">{persona.buyer_role} · {persona.industry}</div>
+              <p className="text-xs text-white/30 leading-relaxed mb-3">{persona.objection_style}</p>
+              <div className="flex flex-wrap gap-1 mb-3">
+                {persona.personality_traits?.map((trait) => (
+                  <span key={trait} className="text-[10px] bg-white/5 text-white/30 px-2 py-0.5 rounded-full">{trait}</span>
+                ))}
+              </div>
+
+              {/* Voice selector */}
+              <div className="border-t border-white/5 pt-3">
+                {editingVoice === persona.id ? (
+                  <div className="flex flex-col gap-2">
+                    <div className="text-[10px] text-white/30 uppercase tracking-wider">Select voice</div>
+                    <div className="grid grid-cols-3 gap-1.5">
+                      {VOICE_OPTIONS.map(v => (
+                        <button
+                          key={v.value}
+                          onClick={() => updateVoice(persona.id, v.value)}
+                          className={cn(
+                            'text-left px-2 py-1.5 rounded-lg border text-xs transition-all',
+                            (persona.voice || 'nova') === v.value
+                              ? 'bg-indigo-600/20 border-indigo-500/30 text-indigo-300'
+                              : 'bg-white/5 border-white/10 text-white/50 hover:border-white/20'
+                          )}
+                        >
+                          <div className="font-medium">{v.label}</div>
+                          <div className="text-[9px] text-white/30">{v.desc}</div>
+                        </button>
+                      ))}
+                    </div>
+                    <button onClick={() => setEditingVoice(null)} className="text-xs text-white/30 hover:text-white/60 text-left">Cancel</button>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] text-white/20 uppercase tracking-wider">Voice</span>
+                      <span className="text-xs text-indigo-400/80 bg-indigo-600/10 px-2 py-0.5 rounded-full">
+                        {voiceInfo.label} · {voiceInfo.desc}
+                      </span>
+                    </div>
+                    {persona.organization_id !== null && (
+                      <button
+                        onClick={() => setEditingVoice(persona.id)}
+                        className="text-[10px] text-white/30 hover:text-indigo-400 transition-colors"
+                      >
+                        Change
+                      </button>
+                    )}
+                  </div>
                 )}
               </div>
             </div>
-            <div className="text-sm font-semibold text-white mb-1">{persona.title}</div>
-            <div className="text-xs text-white/40 mb-3">{persona.buyer_role} · {persona.industry}</div>
-            <p className="text-xs text-white/30 leading-relaxed">{persona.objection_style}</p>
-            <div className="flex flex-wrap gap-1 mt-3">
-              {persona.personality_traits?.map((trait) => (
-                <span key={trait} className="text-[10px] bg-white/5 text-white/30 px-2 py-0.5 rounded-full">{trait}</span>
-              ))}
-            </div>
-          </div>
-        ))}
+          )
+        })}
       </div>
     </div>
   )

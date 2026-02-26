@@ -18,11 +18,14 @@ const repLinks = [
 
 const managerLinks = [
   { href: '/dashboard/manager', label: 'Team Overview', icon: '▦' },
-  { href: '/dashboard/rep', label: 'My Stats', icon: '◉' },
+  { href: '/team', label: 'My Team', icon: '◉' },
+  { href: '/assignments', label: 'Assignments', icon: '◫' },
   { href: '/simulate', label: 'Roleplay', icon: '◈' },
   { href: '/analytics', label: 'Analytics', icon: '◎' },
-  { href: '/assignments', label: 'Assignments', icon: '◫' },
   { href: '/personas', label: 'Personas', icon: '◭' },
+  { href: '/knowledge', label: 'Knowledge Base', icon: '◈' },
+  { href: '/company', label: 'Playbook', icon: '◫' },
+  { href: '/hire', label: 'Hiring', icon: '◉' },
 ]
 
 const bottomLinks = [

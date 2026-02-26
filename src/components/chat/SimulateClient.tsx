@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { Persona, Message, SessionScore, ScenarioType, SCENARIO_LABELS, SCENARIO_DESCRIPTIONS } from '@/lib/types'
+import { LANGUAGES } from '@/lib/languages'
 import { cn } from '@/lib/utils'
 import ScoreCard from '@/components/chat/ScoreCard'
 import VoiceChat from '@/components/chat/VoiceChat'
@@ -11,8 +12,7 @@ interface SimulateClientProps {
   userId: string
 }
 
-type Phase = 'scenario' | 'persona' | 'chat' | 'scored'
-type Mode = 'text' | 'voice'
+type Phase = 'scenario' | 'persona' | 'pre-call' | 'call' | 'scoring' | 'scored'
 
 const SCENARIO_ICONS: Record<ScenarioType, string> = {
   cold_outbound: '📞',
@@ -25,27 +25,26 @@ export default function SimulateClient({ personas, userId }: SimulateClientProps
   const [phase, setPhase] = useState<Phase>('scenario')
   const [selectedScenario, setSelectedScenario] = useState<ScenarioType | null>(null)
   const [selectedPersona, setSelectedPersona] = useState<Persona | null>(null)
+  const [selectedLanguage, setSelectedLanguage] = useState('en-US')
+
+  // Read default language preference from localStorage
+  useEffect(() => {
+    const saved = localStorage.getItem('pref_language')
+    if (saved) setSelectedLanguage(saved)
+  }, [])
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
-  const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
-  const [scoring, setScoring] = useState(false)
   const [score, setScore] = useState<SessionScore | null>(null)
-  const [mode, setMode] = useState<Mode>('text')
-  const bottomRef = useRef<HTMLDivElement>(null)
 
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
-
-  async function startSession(persona: Persona) {
-    setSelectedPersona(persona)
+  async function startSession() {
+    if (!selectedPersona) return
     setLoading(true)
 
     const res = await fetch('/api/sessions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId, personaId: persona.id }),
+      body: JSON.stringify({ userId, personaId: selectedPersona.id }),
     })
     const data = await res.json()
     if (!data.sessionId) { setLoading(false); return }
@@ -55,47 +54,42 @@ export default function SimulateClient({ personas, userId }: SimulateClientProps
     const chatRes = await fetch('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sessionId: data.sessionId, persona, messages: [], userMessage: null, scenarioType: selectedScenario }),
+      body: JSON.stringify({
+        sessionId: data.sessionId,
+        persona: selectedPersona,
+        messages: [],
+        userMessage: null,
+        scenarioType: selectedScenario,
+        language: selectedLanguage,
+      }),
     })
     const chatData = await chatRes.json()
     setMessages([{ role: 'assistant', content: chatData.reply }])
-    setPhase('chat')
+    setPhase('call')
     setLoading(false)
   }
 
-  async function sendMessage() {
-    if (!input.trim() || loading || !sessionId || !selectedPersona) return
-    const userMsg: Message = { role: 'user', content: input.trim() }
-    const newMessages = [...messages, userMsg]
-    setMessages(newMessages)
-    setInput('')
-    setLoading(true)
-
-    const res = await fetch('/api/chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sessionId, persona: selectedPersona, messages: newMessages, userMessage: input.trim(), scenarioType: selectedScenario }),
-    })
-    const data = await res.json()
-    setMessages([...newMessages, { role: 'assistant', content: data.reply }])
-    setLoading(false)
-  }
-
-  async function endSession(finalMessages?: Message[]) {
-    const msgsToScore = finalMessages ?? messages
-    if (!sessionId || !selectedPersona || msgsToScore.filter(m => m.role === 'user').length === 0) return
-    if (finalMessages) setMessages(finalMessages)
-    setScoring(true)
+  async function handleCallEnd(voiceMessages: Message[]) {
+    setMessages(voiceMessages)
+    if (voiceMessages.filter(m => m.role === 'user').length === 0) {
+      reset()
+      return
+    }
+    setPhase('scoring')
 
     const res = await fetch('/api/score', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sessionId, messages: msgsToScore, persona: selectedPersona, scenarioType: selectedScenario }),
+      body: JSON.stringify({
+        sessionId,
+        messages: voiceMessages,
+        persona: selectedPersona,
+        scenarioType: selectedScenario,
+      }),
     })
     const data = await res.json()
     setScore(data.score)
     setPhase('scored')
-    setScoring(false)
   }
 
   function reset() {
@@ -104,9 +98,8 @@ export default function SimulateClient({ personas, userId }: SimulateClientProps
     setSelectedPersona(null)
     setSessionId(null)
     setMessages([])
-    setInput('')
     setScore(null)
-    setMode('text')
+    setSelectedLanguage(localStorage.getItem('pref_language') || 'en-US')
   }
 
   // ── Scenario selection ──
@@ -115,14 +108,14 @@ export default function SimulateClient({ personas, userId }: SimulateClientProps
       <div className="p-8 max-w-4xl mx-auto">
         <div className="mb-8">
           <h1 className="text-2xl font-bold text-white">New Roleplay</h1>
-          <p className="text-white/40 text-sm mt-1">Step 1 of 2 — Select scenario type</p>
+          <p className="text-white/40 text-sm mt-1">Step 1 of 3 — Select scenario type</p>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {(Object.keys(SCENARIO_LABELS) as ScenarioType[]).map((type) => (
             <button
               key={type}
               onClick={() => { setSelectedScenario(type); setPhase('persona') }}
-              className="text-left bg-white/[0.03] hover:bg-white/[0.06] border border-white/8 hover:border-indigo-500/30 rounded-2xl p-6 transition-all group"
+              className="text-left bg-white/[0.03] hover:bg-white/[0.06] border border-white/8 hover:border-indigo-500/30 rounded-2xl p-6 transition-all"
             >
               <div className="text-2xl mb-3">{SCENARIO_ICONS[type]}</div>
               <div className="text-sm font-semibold text-white mb-1">{SCENARIO_LABELS[type]}</div>
@@ -148,170 +141,164 @@ export default function SimulateClient({ personas, userId }: SimulateClientProps
           <h1 className="text-2xl font-bold text-white">New Roleplay</h1>
           <div className="flex items-center gap-2 mt-1">
             <span className="text-xs bg-indigo-600/20 text-indigo-400 px-2 py-0.5 rounded-full">{SCENARIO_LABELS[selectedScenario!]}</span>
-            <span className="text-white/30 text-xs">Step 2 of 2 — Select buyer</span>
+            <span className="text-white/30 text-xs">Step 2 of 3 — Select buyer</span>
           </div>
         </div>
-        {loading ? (
-          <div className="h-64 flex items-center justify-center text-white/30 text-sm">Starting session...</div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {sorted.map((persona) => (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {sorted.map((persona) => (
+            <button
+              key={persona.id}
+              onClick={() => { setSelectedPersona(persona); setPhase('pre-call') }}
+              className="text-left bg-white/[0.03] hover:bg-white/[0.06] border border-white/8 hover:border-indigo-500/30 rounded-2xl p-6 transition-all group"
+            >
+              <div className="flex items-start justify-between mb-3">
+                <div className="w-10 h-10 rounded-xl bg-indigo-600/20 flex items-center justify-center font-semibold text-indigo-300 text-lg">
+                  {persona.buyer_role.charAt(0)}
+                </div>
+                <span className={cn('text-xs px-2.5 py-1 rounded-full',
+                  persona.difficulty === 'hard' ? 'bg-red-500/10 text-red-400' :
+                  persona.difficulty === 'medium' ? 'bg-yellow-500/10 text-yellow-400' :
+                  'bg-emerald-500/10 text-emerald-400'
+                )}>{persona.difficulty}</span>
+              </div>
+              <div className="text-sm font-semibold text-white mb-1">{persona.title}</div>
+              <div className="text-xs text-white/40 mb-3">{persona.buyer_role} · {persona.industry}</div>
+              <div className="flex flex-wrap gap-1">
+                {persona.personality_traits?.slice(0, 3).map((t) => (
+                  <span key={t} className="text-[10px] bg-white/5 text-white/30 px-2 py-0.5 rounded-full">{t}</span>
+                ))}
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+    )
+  }
+
+  // ── Pre-call: language + confirm ──
+  if (phase === 'pre-call' && selectedPersona) {
+    const voiceName = selectedPersona.voice
+      ? selectedPersona.voice.charAt(0).toUpperCase() + selectedPersona.voice.slice(1)
+      : 'Nova'
+
+    return (
+      <div className="p-8 max-w-md mx-auto">
+        <div className="mb-8">
+          <button onClick={() => setPhase('persona')} className="text-xs text-white/30 hover:text-white/60 mb-4 flex items-center gap-1">
+            ← Back
+          </button>
+          <h1 className="text-2xl font-bold text-white">Call Setup</h1>
+          <p className="text-white/40 text-sm mt-1">Step 3 of 3 — Configure your call</p>
+        </div>
+
+        {/* Persona summary */}
+        <div className="bg-white/[0.03] border border-white/8 rounded-2xl p-5 mb-6">
+          <div className="flex items-center gap-3 mb-3">
+            <div className="w-10 h-10 rounded-xl bg-indigo-600/20 flex items-center justify-center font-semibold text-indigo-300">
+              {selectedPersona.buyer_role.charAt(0)}
+            </div>
+            <div>
+              <div className="text-sm font-semibold text-white">{selectedPersona.title}</div>
+              <div className="text-xs text-white/40">{selectedPersona.buyer_role} · {selectedPersona.industry}</div>
+            </div>
+          </div>
+          <div className="flex items-center gap-3 text-xs text-white/30">
+            <span>🎙 Voice: <span className="text-indigo-400/80">{voiceName}</span></span>
+            <span>·</span>
+            <span className={cn(
+              selectedPersona.difficulty === 'hard' ? 'text-red-400/70' :
+              selectedPersona.difficulty === 'medium' ? 'text-yellow-400/70' :
+              'text-emerald-400/70'
+            )}>{selectedPersona.difficulty} difficulty</span>
+          </div>
+        </div>
+
+        {/* Language selector */}
+        <div className="mb-6">
+          <label className="text-xs text-white/40 uppercase tracking-wider mb-3 block">Call Language</label>
+          <div className="grid grid-cols-3 gap-2">
+            {LANGUAGES.map((lang) => (
               <button
-                key={persona.id}
-                onClick={() => startSession(persona)}
-                className="text-left bg-white/[0.03] hover:bg-white/[0.06] border border-white/8 hover:border-indigo-500/30 rounded-2xl p-6 transition-all"
+                key={lang.code}
+                onClick={() => setSelectedLanguage(lang.code)}
+                className={cn(
+                  'flex items-center gap-2 px-3 py-2.5 rounded-xl border text-sm transition-all',
+                  selectedLanguage === lang.code
+                    ? 'bg-indigo-600/20 border-indigo-500/40 text-indigo-300'
+                    : 'bg-white/[0.03] border-white/8 text-white/50 hover:border-white/20 hover:text-white/70'
+                )}
               >
-                <div className="flex items-start justify-between mb-3">
-                  <div className="w-10 h-10 rounded-xl bg-indigo-600/20 flex items-center justify-center font-semibold text-indigo-300">
-                    {persona.buyer_role.charAt(0)}
-                  </div>
-                  <span className={cn('text-xs px-2.5 py-1 rounded-full',
-                    persona.difficulty === 'hard' ? 'bg-red-500/10 text-red-400' :
-                    persona.difficulty === 'medium' ? 'bg-yellow-500/10 text-yellow-400' :
-                    'bg-emerald-500/10 text-emerald-400'
-                  )}>{persona.difficulty}</span>
-                </div>
-                <div className="text-sm font-semibold text-white mb-1">{persona.title}</div>
-                <div className="text-xs text-white/40 mb-3">{persona.buyer_role} · {persona.industry}</div>
-                <div className="flex flex-wrap gap-1">
-                  {persona.personality_traits?.slice(0, 3).map((t) => (
-                    <span key={t} className="text-[10px] bg-white/5 text-white/30 px-2 py-0.5 rounded-full">{t}</span>
-                  ))}
-                </div>
+                <span className="text-base">{lang.flag}</span>
+                <span className="text-xs">{lang.label}</span>
               </button>
             ))}
           </div>
+          {selectedLanguage !== 'en-US' && (
+            <p className="text-[10px] text-yellow-400/60 mt-2">
+              Note: Speech recognition in non-English languages works best in Chrome.
+            </p>
+          )}
+        </div>
+
+        {/* Start call button */}
+        {loading ? (
+          <div className="flex flex-col items-center gap-3 py-4">
+            <div className="flex gap-1">
+              {[0,1,2].map(i => <div key={i} className="w-2 h-2 rounded-full bg-indigo-400 animate-bounce" style={{ animationDelay: `${i*0.15}s` }} />)}
+            </div>
+            <span className="text-sm text-white/30">Connecting call...</span>
+          </div>
+        ) : (
+          <button
+            onClick={startSession}
+            className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-3.5 rounded-xl text-sm transition-colors flex items-center justify-center gap-2"
+          >
+            <span className="text-base">🎙</span> Start Call
+          </button>
         )}
+      </div>
+    )
+  }
+
+  // ── Scoring in progress ──
+  if (phase === 'scoring') {
+    return (
+      <div className="h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-14 h-14 rounded-2xl bg-indigo-600/20 flex items-center justify-center mx-auto mb-4 text-2xl">◈</div>
+          <div className="text-white text-sm font-medium mb-1">Analyzing your call...</div>
+          <div className="text-white/30 text-xs mb-4">This usually takes 15–25 seconds</div>
+          <div className="flex gap-1 justify-center">
+            {[0,1,2].map(i => <div key={i} className="w-2 h-2 rounded-full bg-indigo-400 animate-bounce" style={{ animationDelay: `${i*0.15}s` }} />)}
+          </div>
+        </div>
       </div>
     )
   }
 
   // ── Scored ──
   if (phase === 'scored' && score) {
-    return <ScoreCard score={score} persona={selectedPersona!} scenarioType={selectedScenario!} messages={messages} onReset={reset} />
-  }
-
-  // ── Voice mode ──
-  if (phase === 'chat' && mode === 'voice' && selectedPersona && sessionId) {
-    if (scoring) {
-      return (
-        <div className="h-screen flex items-center justify-center">
-          <div className="text-center">
-            <div className="text-white/40 text-sm mb-2">Analyzing your call...</div>
-            <div className="flex gap-1 justify-center">
-              {[0,1,2].map(i => <div key={i} className="w-2 h-2 rounded-full bg-indigo-400 animate-bounce" style={{ animationDelay: `${i*0.15}s` }} />)}
-            </div>
-          </div>
-        </div>
-      )
-    }
     return (
-      <VoiceChat
-        sessionId={sessionId}
-        persona={selectedPersona}
+      <ScoreCard
+        score={score}
+        persona={selectedPersona!}
         scenarioType={selectedScenario!}
-        initialAIMessage={messages[0]?.content ?? ''}
-        onEnd={(voiceMessages) => endSession(voiceMessages)}
-        onSwitchToText={() => setMode('text')}
+        messages={messages}
+        onReset={reset}
       />
     )
   }
 
-  // ── Live text chat ──
+  // ── Live voice call ──
   return (
-    <div className="flex flex-col h-screen">
-      <div className="border-b border-white/5 px-6 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-full bg-indigo-600/20 flex items-center justify-center font-semibold text-indigo-300">
-            {selectedPersona?.buyer_role.charAt(0)}
-          </div>
-          <div>
-            <div className="text-sm font-medium text-white">{selectedPersona?.title}</div>
-            <div className="text-xs text-white/40">{selectedPersona?.buyer_role} · {selectedPersona?.industry}</div>
-          </div>
-          <span className="ml-1 text-xs bg-indigo-600/15 text-indigo-400 px-2 py-0.5 rounded-full">
-            {SCENARIO_LABELS[selectedScenario!]}
-          </span>
-          <span className={cn('text-xs px-2 py-0.5 rounded-full',
-            selectedPersona?.difficulty === 'hard' ? 'bg-red-500/10 text-red-400' :
-            selectedPersona?.difficulty === 'medium' ? 'bg-yellow-500/10 text-yellow-400' :
-            'bg-emerald-500/10 text-emerald-400'
-          )}>{selectedPersona?.difficulty}</span>
-        </div>
-        <div className="flex items-center gap-2">
-          {/* Voice toggle */}
-          <button
-            onClick={() => setMode('voice')}
-            className="flex items-center gap-1.5 text-xs bg-white/5 hover:bg-indigo-600/20 border border-white/10 hover:border-indigo-500/30 text-white/50 hover:text-indigo-300 px-3 py-2 rounded-lg transition-all"
-            title="Switch to voice mode"
-          >
-            <span>🎙</span> Voice
-          </button>
-          <button
-            onClick={() => endSession()}
-            disabled={scoring || messages.filter(m => m.role === 'user').length === 0}
-            className="text-xs bg-white/5 hover:bg-white/10 border border-white/10 text-white/60 hover:text-white px-4 py-2 rounded-lg transition-all disabled:opacity-30"
-          >
-            {scoring ? 'Scoring...' : 'End & Score'}
-          </button>
-        </div>
-      </div>
-
-      <div className="flex-1 overflow-y-auto px-6 py-6 space-y-4">
-        {messages.map((msg, i) => (
-          <div key={i} className={cn('flex', msg.role === 'user' ? 'justify-end' : 'justify-start')}>
-            {msg.role === 'assistant' && (
-              <div className="w-7 h-7 rounded-full bg-indigo-600/20 flex items-center justify-center text-xs text-indigo-300 mr-2 flex-shrink-0 mt-0.5">
-                {selectedPersona?.buyer_role.charAt(0)}
-              </div>
-            )}
-            <div className={cn(
-              'max-w-[75%] rounded-2xl px-4 py-3 text-sm leading-relaxed',
-              msg.role === 'user'
-                ? 'bg-indigo-600 text-white rounded-tr-sm'
-                : 'bg-white/[0.06] text-white/85 border border-white/8 rounded-tl-sm'
-            )}>
-              {msg.content}
-            </div>
-          </div>
-        ))}
-        {loading && (
-          <div className="flex justify-start">
-            <div className="w-7 h-7 rounded-full bg-indigo-600/20 flex items-center justify-center text-xs mr-2">
-              {selectedPersona?.buyer_role.charAt(0)}
-            </div>
-            <div className="bg-white/[0.06] border border-white/8 rounded-2xl rounded-tl-sm px-4 py-3">
-              <div className="flex gap-1">
-                {[0,1,2].map(i => <div key={i} className="w-1.5 h-1.5 rounded-full bg-white/30 animate-bounce" style={{ animationDelay: `${i*0.15}s` }} />)}
-              </div>
-            </div>
-          </div>
-        )}
-        <div ref={bottomRef} />
-      </div>
-
-      <div className="border-t border-white/5 px-6 py-4">
-        <div className="flex gap-3">
-          <input
-            type="text"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && sendMessage()}
-            placeholder="Your response to the buyer..."
-            className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-white/20 focus:outline-none focus:border-indigo-500/50 transition-all"
-          />
-          <button
-            onClick={sendMessage}
-            disabled={loading || !input.trim()}
-            className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-30 text-white px-5 py-3 rounded-xl text-sm font-medium transition-colors"
-          >
-            Send
-          </button>
-        </div>
-        <div className="mt-2 text-xs text-white/20 text-center">
-          {messages.filter(m => m.role === 'user').length} rep messages · End session to get your scored analysis
-        </div>
-      </div>
-    </div>
+    <VoiceChat
+      sessionId={sessionId!}
+      persona={selectedPersona!}
+      scenarioType={selectedScenario!}
+      initialAIMessage={messages[0]?.content ?? ''}
+      language={selectedLanguage}
+      onEnd={handleCallEnd}
+      onSwitchToText={reset}
+    />
   )
 }

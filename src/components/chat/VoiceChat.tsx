@@ -9,6 +9,7 @@ interface VoiceChatProps {
   persona: Persona
   scenarioType: ScenarioType
   initialAIMessage: string
+  language?: string
   onEnd: (messages: Message[]) => void
   onSwitchToText: () => void
 }
@@ -19,7 +20,7 @@ type CallStatus = 'idle' | 'ai_speaking' | 'user_turn' | 'thinking'
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnySpeechRecognition = any
 
-export default function VoiceChat({ sessionId, persona, scenarioType, initialAIMessage, onEnd, onSwitchToText }: VoiceChatProps) {
+export default function VoiceChat({ sessionId, persona, scenarioType, initialAIMessage, language = 'en-US', onEnd, onSwitchToText }: VoiceChatProps) {
   const [callStatus, setCallStatus] = useState<CallStatus>('ai_speaking')
   const [messages, setMessages] = useState<Message[]>([{ role: 'assistant', content: initialAIMessage }])
   const [liveTranscript, setLiveTranscript] = useState('')
@@ -52,7 +53,7 @@ export default function VoiceChat({ sessionId, persona, scenarioType, initialAIM
       const res = await fetch('/api/voice/speak', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text }),
+        body: JSON.stringify({ text, voice: persona.voice || 'nova' }),
       })
       if (!res.ok) throw new Error('TTS failed')
 
@@ -114,6 +115,7 @@ export default function VoiceChat({ sessionId, persona, scenarioType, initialAIM
           messages: newMessages,
           userMessage: transcript,
           scenarioType,
+          language,
         }),
       })
       const data = await res.json()
@@ -144,7 +146,7 @@ export default function VoiceChat({ sessionId, persona, scenarioType, initialAIM
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const recognition: any = new SpeechRecognitionClass()
-    recognition.lang = 'en-US'
+    recognition.lang = language
     recognition.interimResults = true
     recognition.maxAlternatives = 1
     recognition.continuous = false
@@ -218,7 +220,7 @@ export default function VoiceChat({ sessionId, persona, scenarioType, initialAIM
             onClick={onSwitchToText}
             className="text-xs text-white/30 hover:text-white/60 px-3 py-1.5 rounded-lg hover:bg-white/5 transition-all"
           >
-            ⌨ Text
+            ✕ Cancel
           </button>
         </div>
       </div>
