@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { DEMO_USER } from '@/lib/demo'
+import { getSessionUser } from '@/lib/auth'
 
 export async function GET() {
+  const user = await getSessionUser()
   const supabase = createAdminClient()
   const { data } = await supabase
     .from('users')
     .select('id, name, email, role')
-    .eq('id', DEMO_USER.id)
+    .eq('id', user.id)
     .single()
 
   return NextResponse.json({ user: data })
@@ -15,6 +16,7 @@ export async function GET() {
 
 export async function PATCH(req: NextRequest) {
   try {
+    const user = await getSessionUser()
     const supabase = createAdminClient()
     const { name } = await req.json()
 
@@ -25,7 +27,7 @@ export async function PATCH(req: NextRequest) {
     const { data, error } = await supabase
       .from('users')
       .update({ name: name.trim() })
-      .eq('id', DEMO_USER.id)
+      .eq('id', user.id)
       .select()
       .single()
 

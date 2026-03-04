@@ -1,5 +1,5 @@
 import { createAdminClient } from '@/lib/supabase/admin'
-import { DEMO_USER } from '@/lib/demo'
+import { getSessionUser } from '@/lib/auth'
 import { Session } from '@/lib/types'
 import { avgScores, formatDate, scoreColor } from '@/lib/utils'
 import ScoreGauge from '@/components/analytics/ScoreGauge'
@@ -8,12 +8,13 @@ import ScoreProgressionChart from '@/components/dashboard/ScoreProgressionChart'
 import Link from 'next/link'
 
 export default async function AnalyticsPage() {
+  const user = await getSessionUser()
   const supabase = createAdminClient()
 
   const { data: sessions } = await supabase
     .from('sessions')
     .select('*, personas(title, industry, difficulty)')
-    .eq('user_id', DEMO_USER.id)
+    .eq('user_id', user.id)
     .order('created_at', { ascending: true })
 
   const allSessions: Session[] = sessions || []
@@ -48,7 +49,7 @@ export default async function AnalyticsPage() {
       <div className="flex items-center justify-between mb-8">
         <div>
           <h1 className="text-2xl font-bold text-white">Analytics</h1>
-          <p className="text-white/40 text-sm mt-1">Performance overview for {DEMO_USER.name}</p>
+          <p className="text-white/40 text-sm mt-1">Performance overview for {user.name}</p>
         </div>
         <Link
           href="/simulate"

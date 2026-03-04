@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import OpenAI from 'openai'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { DEMO_USER } from '@/lib/demo'
+import { getSessionUser } from '@/lib/auth'
 import { callPython } from '@/lib/python-backend'
 import { Persona, Message, ScenarioType } from '@/lib/types'
 
@@ -48,6 +48,7 @@ RULES:
 
 export async function POST(req: NextRequest) {
   try {
+    const user = await getSessionUser()
     const supabase = createAdminClient()
     const { sessionId, persona, messages, userMessage, scenarioType, language } = await req.json() as {
       sessionId: string
@@ -62,7 +63,7 @@ export async function POST(req: NextRequest) {
     const queryText = userMessage ?? `${persona.buyer_role} ${persona.industry} ${scenarioType}`
     const { context: knowledgeContext } = await callPython<{ context: string }>('/rag/retrieve', {
       query: queryText,
-      org_id: DEMO_USER.organization_id,
+      org_id: user.organization_id,
       limit: 3,
     }).catch(() => ({ context: '' }))
 

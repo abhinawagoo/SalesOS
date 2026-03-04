@@ -1,16 +1,17 @@
 import { createAdminClient } from '@/lib/supabase/admin'
-import { DEMO_USER } from '@/lib/demo'
+import { getSessionUser } from '@/lib/auth'
 import Link from 'next/link'
 import { Session, UserProfile } from '@/lib/types'
 import { avgScores, scoreColor, scoreBg } from '@/lib/utils'
 
 export default async function ManagerDashboard() {
+  const user = await getSessionUser()
   const supabase = createAdminClient()
 
   const { data: teamMembers } = await supabase
     .from('users')
     .select('*')
-    .eq('organization_id', DEMO_USER.organization_id)
+    .eq('organization_id', user.organization_id)
 
   const { data: allSessions } = await supabase
     .from('sessions')
@@ -33,7 +34,7 @@ export default async function ManagerDashboard() {
       <div className="flex items-center justify-between mb-8">
         <div>
           <h1 className="text-2xl font-bold text-white">Team Overview</h1>
-          <p className="text-white/40 text-sm mt-1">SalesOS Demo Org</p>
+          <p className="text-white/40 text-sm mt-1">{user.organizations?.name ?? 'Your Team'}</p>
         </div>
         <Link href="/assignments" className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium px-5 py-2.5 rounded-xl transition-colors">
           + Assign Practice

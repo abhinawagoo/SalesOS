@@ -16,22 +16,31 @@ export default function LoginPage() {
     setError('')
 
     const supabase = createClient()
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
+    const { data, error: loginError } = await supabase.auth.signInWithPassword({ email, password })
 
-    if (error) {
-      setError(error.message)
+    if (loginError) {
+      setError(loginError.message)
       setLoading(false)
-    } else {
-      // Hard redirect so server components pick up the new auth cookies cleanly.
-      // router.push + router.refresh causes multiple rapid requests.
-      window.location.href = '/dashboard/rep'
+      return
     }
+
+    // Redirect based on role — fetch profile using the authenticated session
+    let destination = '/dashboard/rep'
+    if (data.user) {
+      const { data: profile } = await supabase
+        .from('users')
+        .select('role')
+        .eq('id', data.user.id)
+        .single()
+      if (profile?.role === 'manager') destination = '/dashboard/manager'
+    }
+
+    window.location.href = destination
   }
 
   return (
     <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center px-4">
       <div className="w-full max-w-sm">
-        {/* Logo */}
         <div className="flex items-center gap-2 justify-center mb-8">
           <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center text-white font-bold text-sm">S</div>
           <span className="font-semibold text-white tracking-tight">SalesOS</span>

@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { DEMO_USER } from '@/lib/demo'
+import { getSessionUser } from '@/lib/auth'
 
 export async function GET() {
+  const user = await getSessionUser()
   const supabase = createAdminClient()
   const { data } = await supabase
     .from('company_config')
     .select('*')
-    .eq('organization_id', DEMO_USER.organization_id)
+    .eq('organization_id', user.organization_id)
     .single()
 
   return NextResponse.json({ config: data || null })
@@ -15,6 +16,7 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   try {
+    const user = await getSessionUser()
     const supabase = createAdminClient()
     const body = await req.json()
     const {
@@ -29,7 +31,7 @@ export async function POST(req: NextRequest) {
     const { data, error } = await supabase
       .from('company_config')
       .upsert({
-        organization_id: DEMO_USER.organization_id,
+        organization_id: user.organization_id,
         icp_description: icp_description ?? '',
         must_ask_questions: must_ask_questions ?? [],
         key_differentiators: key_differentiators ?? [],

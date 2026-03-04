@@ -25,9 +25,7 @@ export default function SignupPage() {
       email,
       password,
       options: {
-        // Metadata picked up by the DB trigger to create org + profile
-        data: { name, role, org_name: orgName },
-        // Redirect back to the callback route after email confirmation
+        data: { name, role, org_name: orgName || `${name}'s Workspace` },
         emailRedirectTo: `${window.location.origin}/auth/callback`,
       },
     })
@@ -38,11 +36,27 @@ export default function SignupPage() {
       return
     }
 
+    // Always call setup as a fallback in case the DB trigger isn't installed.
+    // The setup route is idempotent — it's a no-op if the profile already exists.
+    if (data.user) {
+      await fetch('/api/auth/setup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: data.user.id,
+          name,
+          email,
+          role,
+          orgName: orgName || `${name}'s Workspace`,
+        }),
+      }).catch(() => {/* non-fatal */})
+    }
+
     if (data.session) {
-      // Email confirmation is OFF — logged in immediately, trigger already ran
-      window.location.href = '/dashboard/rep'
+      // Email confirmation OFF — redirect immediately
+      window.location.href = role === 'manager' ? '/dashboard/manager' : '/dashboard/rep'
     } else {
-      // Email confirmation is ON — show "check your inbox" state
+      // Email confirmation ON — show inbox prompt
       setEmailSent(true)
       setLoading(false)
     }
@@ -93,14 +107,15 @@ export default function SignupPage() {
               />
             </div>
             <div>
-              <label className="block text-xs text-white/50 mb-1.5">Organization name</label>
+              <label className="block text-xs text-white/50 mb-1.5">
+                Organization name <span className="text-white/25">(optional)</span>
+              </label>
               <input
                 type="text"
                 value={orgName}
                 onChange={(e) => setOrgName(e.target.value)}
-                required
                 className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white placeholder-white/20 focus:outline-none focus:border-indigo-500/50 focus:bg-white/[0.07] transition-all"
-                placeholder="Acme Corp"
+                placeholder="Acme Corp (or leave blank)"
               />
             </div>
             <div>

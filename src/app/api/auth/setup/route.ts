@@ -5,20 +5,32 @@ export async function POST(req: NextRequest) {
   try {
     const { userId, name, email, role, orgName } = await req.json()
 
-    if (!userId || !name || !email || !role || !orgName) {
-      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
+    if (!userId || !email) {
+      return NextResponse.json({ error: 'userId and email are required' }, { status: 400 })
     }
 
-    // Lazy init — uses service role to bypass RLS for initial setup
     const supabaseAdmin = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY!
     )
 
-    // Create organization
+    // Idempotent — if profile already exists (trigger ran), just return it
+    const { data: existing } = await supabaseAdmin
+      .from('users')
+      .select('id, organization_id, role')
+      .eq('id', userId)
+      .single()
+
+    if (existing) {
+      return NextResponse.json({ success: true, orgId: existing.organization_id, existing: true })
+    }
+
+    // Create org (use orgName or fallback to a sensible default)
+    const resolvedOrgName = orgName?.trim() || `${name?.trim() || email.split('@')[0]}'s Workspace`
+
     const { data: org, error: orgError } = await supabaseAdmin
       .from('organizations')
-      .insert({ name: orgName })
+      .insert({ name: resolvedOrgName })
       .select()
       .single()
 
@@ -31,9 +43,9 @@ export async function POST(req: NextRequest) {
       .from('users')
       .insert({
         id: userId,
-        name,
+        name: name?.trim() || email.split('@')[0],
         email,
-        role,
+        role: role || 'rep',
         organization_id: org.id,
       })
 
@@ -43,6 +55,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ success: true, orgId: org.id })
   } catch (err) {
+    console.error('Setup error:', err)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

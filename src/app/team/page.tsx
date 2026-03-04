@@ -1,22 +1,23 @@
 import { createAdminClient } from '@/lib/supabase/admin'
-import { DEMO_USER } from '@/lib/demo'
+import { getSessionUser } from '@/lib/auth'
 import { Session, UserProfile } from '@/lib/types'
 import TeamClient from '@/components/team/TeamClient'
 
 export default async function TeamPage() {
+  const user = await getSessionUser()
   const supabase = createAdminClient()
 
   const [{ data: reps }, { data: sessions }] = await Promise.all([
     supabase
       .from('users')
       .select('*')
-      .eq('organization_id', DEMO_USER.organization_id)
+      .eq('organization_id', user.organization_id)
       .eq('role', 'rep')
       .order('created_at', { ascending: false }),
     supabase
       .from('sessions')
       .select('user_id, scores, created_at')
-      .eq('user_id', DEMO_USER.id), // in demo, only DEMO_USER has sessions
+      .eq('user_id', user.id), // in demo, only DEMO_USER has sessions
   ])
 
   // Build per-rep stats from sessions

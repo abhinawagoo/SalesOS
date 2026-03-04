@@ -1,23 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { DEMO_USER } from '@/lib/demo'
+import { getSessionUser } from '@/lib/auth'
 
 export async function GET() {
   try {
+    const user = await getSessionUser()
     const supabase = createAdminClient()
 
     // Manager: see assignments they created
     const { data: managed } = await supabase
       .from('assignments')
       .select('*, personas(title, industry, difficulty), rep:users!assignments_rep_id_fkey(name, email)')
-      .eq('manager_id', DEMO_USER.id)
+      .eq('manager_id', user.id)
       .order('created_at', { ascending: false })
 
     // Rep: see assignments for them
     const { data: assigned } = await supabase
       .from('assignments')
       .select('*, personas(title, industry, difficulty), sessions(scores, created_at)')
-      .eq('rep_id', DEMO_USER.id)
+      .eq('rep_id', user.id)
       .order('due_date', { ascending: true })
 
     return NextResponse.json({ managed: managed || [], assigned: assigned || [] })
@@ -28,6 +29,7 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   try {
+    const user = await getSessionUser()
     const supabase = createAdminClient()
     const body = await req.json()
     const { rep_id, persona_id, scenario_type, due_date } = body
@@ -35,7 +37,7 @@ export async function POST(req: NextRequest) {
     const { data, error } = await supabase
       .from('assignments')
       .insert({
-        manager_id: DEMO_USER.id,
+        manager_id: user.id,
         rep_id,
         persona_id,
         scenario_type,
@@ -54,6 +56,7 @@ export async function POST(req: NextRequest) {
 
 export async function PATCH(req: NextRequest) {
   try {
+    const user = await getSessionUser()
     const supabase = createAdminClient()
     const { id, status, manager_comment, session_id } = await req.json()
 

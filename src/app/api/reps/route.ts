@@ -1,14 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { DEMO_USER } from '@/lib/demo'
+import { getSessionUser } from '@/lib/auth'
 
 export async function GET() {
   try {
+    const user = await getSessionUser()
     const supabase = createAdminClient()
     const { data, error } = await supabase
       .from('users')
       .select('id, name, email, role, created_at')
-      .eq('organization_id', DEMO_USER.organization_id)
+      .eq('organization_id', user.organization_id)
       .eq('role', 'rep')
       .order('created_at', { ascending: false })
 
@@ -21,6 +22,7 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   try {
+    const user = await getSessionUser()
     const supabase = createAdminClient()
     const { name, email } = await req.json()
 
@@ -60,7 +62,7 @@ export async function POST(req: NextRequest) {
     const { data: rep, error: updateError } = await supabase
       .from('users')
       .update({
-        organization_id: DEMO_USER.organization_id,
+        organization_id: user.organization_id,
         role: 'rep',
         name: cleanName,
       })
@@ -80,6 +82,7 @@ export async function POST(req: NextRequest) {
 
 export async function DELETE(req: NextRequest) {
   try {
+    const user = await getSessionUser()
     const supabase = createAdminClient()
     const { id } = await req.json()
     if (!id) return NextResponse.json({ error: 'ID required' }, { status: 400 })
@@ -89,7 +92,7 @@ export async function DELETE(req: NextRequest) {
       .from('users')
       .delete()
       .eq('id', id)
-      .eq('organization_id', DEMO_USER.organization_id)
+      .eq('organization_id', user.organization_id)
       .eq('role', 'rep')
 
     if (dbError) return NextResponse.json({ error: dbError.message }, { status: 500 })

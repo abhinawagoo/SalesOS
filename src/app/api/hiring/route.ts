@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { DEMO_USER } from '@/lib/demo'
+import { getSessionUser } from '@/lib/auth'
 
 export async function GET() {
+  const user = await getSessionUser()
   const supabase = createAdminClient()
   const { data } = await supabase
     .from('candidates')
     .select('id, name, email, role_applied, status, overall_score, created_at, assessment_token, token_expires_at')
-    .eq('organization_id', DEMO_USER.organization_id)
+    .eq('organization_id', user.organization_id)
     .order('created_at', { ascending: false })
 
   return NextResponse.json({ candidates: data || [] })
@@ -15,6 +16,7 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   try {
+    const user = await getSessionUser()
     const supabase = createAdminClient()
     const { name, email, role_applied } = await req.json()
 
@@ -25,8 +27,8 @@ export async function POST(req: NextRequest) {
     const { data, error } = await supabase
       .from('candidates')
       .insert({
-        organization_id: DEMO_USER.organization_id,
-        invited_by: DEMO_USER.id,
+        organization_id: user.organization_id,
+        invited_by: user.id,
         name: name.trim(),
         email: email.trim().toLowerCase(),
         role_applied: role_applied?.trim() || '',
@@ -45,6 +47,7 @@ export async function POST(req: NextRequest) {
 
 export async function PATCH(req: NextRequest) {
   try {
+    const user = await getSessionUser()
     const supabase = createAdminClient()
     const { id, status, notes } = await req.json()
     if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 })
@@ -57,7 +60,7 @@ export async function PATCH(req: NextRequest) {
       .from('candidates')
       .update(update)
       .eq('id', id)
-      .eq('organization_id', DEMO_USER.organization_id)
+      .eq('organization_id', user.organization_id)
       .select()
       .single()
 
@@ -70,6 +73,7 @@ export async function PATCH(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
+  const user = await getSessionUser()
   const { id } = await req.json()
   if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 })
 
@@ -78,7 +82,7 @@ export async function DELETE(req: NextRequest) {
     .from('candidates')
     .delete()
     .eq('id', id)
-    .eq('organization_id', DEMO_USER.organization_id)
+    .eq('organization_id', user.organization_id)
 
   return NextResponse.json({ success: true })
 }
